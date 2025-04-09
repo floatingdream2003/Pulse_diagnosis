@@ -3,6 +3,7 @@ import numpy as np
 import time
 from scipy import signal
 from signal_processing import Signal_processing
+from scipy.signal import find_peaks
 
 def wrist_detect(img):
 
@@ -84,6 +85,8 @@ class Process(object):
         self.bpms = []
         self.peaks = []
         self.sp = Signal_processing()
+        self.signal = True
+        self.T = 0
 
     def extractColor(self, frame):
         
@@ -96,71 +99,48 @@ class Process(object):
 
     def run(self,ROIs):
         frame = self.frame_in
+        green_val = self.sp.extract_color(ROIs)
+        self.frame_out = frame
 
-        green_val = self.sp.extract_color(ROIs)                                                                         # 使用了Signal_processing类的方法
-        # 从ROIS中提取绿色平均值
-
-        self.frame_out = frame# 将当前输入帧（frame）赋值给输出帧（self.frame_out），用于显示和保存。
-
-        L = len(self.data_buffer)   # data_buffer是一个列表，用于存储绿色平均值的
-
+        L = len(self.data_buffer)
         g = green_val # 从ROIS中提取绿色平均值（简写）
-        
-        if(abs(g-np.mean(self.data_buffer))>10 and L>99): # 删除突然变化，如果avg值变化超过10，则使用data_buffer的平均值
+
+        if L == 0:
+            self.t0 = time.time()
+
+        if abs(g - np.mean(self.data_buffer)) > 10 and L > 99:
             g = self.data_buffer[-1]
-        
-        self.times.append(time.time() - self.t0)
 
-        #把g添加到data_buffer里去
-        self.data_buffer.append(g) # 将从绿色通道提取的平均值（g）添加到数据缓冲区列表中
+        self.data_buffer.append(g)
 
-############################################# 后面的就是利用data_buffer数据来测心率和一系列处理了###################################################
+        if L >= self.buffer_size:
+            self.data_buffer = self.data_buffer[5:]
 
-        #只能在固定大小的缓冲区中处理
-        if L > self.buffer_size:
-            self.data_buffer = self.data_buffer[-self.buffer_size:]
-            self.times = self.times[-self.buffer_size:]
-            self.bpms = self.bpms[-self.buffer_size//2:]
-            L = self.buffer_size#缓冲区长度
-            
-        processed = np.array(self.data_buffer)#将绿色通道平均值构成的列表转换成数组
-        
-        # start calculating after the first 10 frames
-        if L == self.buffer_size:
-            
-            self.fps = float(L) / (self.times[-1] - self.times[0])#使用计算机处理器的真实fps计算HR，而不是相机提供的fps
-            even_times = np.linspace(self.times[0], self.times[-1], L)
-            
-            processed = signal.detrend(processed)#消除信号的趋势，避免光变化的干扰
-            interpolated = np.interp(even_times, self.times, processed) #interpolation by 1
-            interpolated = np.hamming(L) * interpolated
-            #norm = (interpolated - np.mean(interpolated))/np.std(interpolated)#normalization
-            norm = interpolated/np.linalg.norm(interpolated)
-            raw = np.fft.rfft(norm*30)#do real fft with the normalization multiplied by 10
-            
-            self.freqs = float(self.fps) / L * np.arange(L / 2 + 1)
-            freqs = 60. * self.freqs
+            if self.signal==True:
+                t_total = time.time() - self.t0
+                self.fps = self.buffer_size / t_total
+                self.T = self.buffer_size / self.fps
+                self.signal=False
 
-            self.fft = np.abs(raw)**2#get amplitude spectrum
-        
-            idx = np.where((freqs > 50) & (freqs < 180))#控制HR在频率范围内
-            pruned = self.fft[idx]
-            pfreq = freqs[idx]
+            # 信号预处理
+            processed = np.array(self.data_buffer)
+            processed = signal.detrend(processed)  # 去除趋势
+            norm = processed / np.max(np.abs(processed))  # 归一化到 [-1, 1]
 
-            self.freqs = pfreq 
-            self.fft = pruned
-            
-            idx2 = np.argmax(pruned)#max in the range can be HR
-            
-            self.bpm = self.freqs[idx2]
+            fft_processed = np.fft.rfft(norm)
+            spectrum = np.abs(fft_processed)
+
+            # 检测峰值（仅返回峰值数量）
+            peaks, _ = find_peaks(
+                spectrum,
+                height=0.1 * np.max(spectrum),  # 高度阈值
+                distance=5,  # 最小峰间距
+            )
+            numpeak = len(peaks)
+
+            self.bpm = numpeak / self.T * 60
             self.bpms.append(self.bpm)
-            # print("实时心率：",self.bpm)
-
-            processed = self.butter_bandpass_filter(processed,0.8,3,self.fps,order = 3)                   # 调用了Process类中的butter_bandpass_filter方法
-            #ifft = np.fft.irfft(raw)
-        self.samples = processed # multiply the signal with 5 for easier to see in the plot
-        #TODO: find peaks to draw HR-like signal.
-
+            print(f"bpm:{self.bpm}")
         return True
     
     def reset(self):
