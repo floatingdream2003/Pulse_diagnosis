@@ -340,21 +340,11 @@ class GUI(QMainWindow):
         if ret == True:
             self.frame = self.process.frame_out  # get the frame to show in GUI
             self.f_fr = ROI
-            # print(self.f_fr.shape)
             self.bpm = self.process.bpm  # get the bpm change over the time
         else:
             self.frame = frame
             self.f_fr = np.zeros((10, 10, 3), np.uint8)
             self.bpm = 0
-
-
-        # # 将心率转换为NNI和R波峰时间
-        # if self.bpm > 0:
-        #     nni, rpeaks = self.nni123(self.bpm)
-        #     self.nni_list=np.append(self.nni_list,nni)  # 将新的 nni 添加到列表
-        #     self.rpeaks_list=np.append(self.rpeaks_list,rpeaks)  # 将新的 rpeaks 添加到列表
-        #
-
 
         self.frame = cv2.cvtColor(self.frame, cv2.COLOR_RGB2BGR)
         cv2.putText(self.frame, "FPS " + str(float("{:.2f}".format(self.process.fps))),
@@ -369,20 +359,10 @@ class GUI(QMainWindow):
                        self.f_fr.strides[0], QImage.Format_RGB888)
 
         lblHR.setText("Freq: " + str(float("{:.2f}".format(self.bpm))))
-        # print("实时心率：", self.bpm)
-
         self.hr_store(self.bpm)
 
 
-        #将心率信息存储到txt中########################################################################
-        # if(self.bpm!=0):
-        #     with open(self.bpm_file_path, "a") as file:
-        #         file.write(f"{self.bpm} ")
-
-
-        if self.process.bpms.__len__() > 50:
-            if (max(self.process.bpms - np.mean(self.process.bpms)) < 5):  # show HR if it is stable -the change is not over 5 bpm- for 3s
-                lblHR2.setText("Heart rate: " + str(float("{:.2f}".format(np.mean(self.process.bpms)))) + " bpm")
+        lblHR2.setText("Heart rate: " + str(float("{:.2f}".format(np.mean(self.process.bpms)))))
         self.key_handler()  # if not the GUI cant show anything
 
     def run(self, input):
